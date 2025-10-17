@@ -1,5 +1,5 @@
 data/ 
-!data/regulatory/
+!data/regulatory/*
 
 # PyBuilder
 .pybuilder/
