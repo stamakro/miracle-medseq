@@ -23,20 +23,19 @@ parser.add_argument('--output', dest='outputfile', metavar='OUTPUTFILE', help='p
 
 
 args = parser.parse_args()
-sys.exit(0)
 
 #env rpy
 Ngenes = 500
-logFC = 2.5
 
-
+# load healthy and tumor data
 dataHbd = pd.read_csv(args.hbdfile, index_col=0)
 dataTumor = pd.read_csv(args.tumorfile, index_col=0)
 
+# autosomal chromosomes
 countsHbd = dataHbd.iloc[np.where(pd.Series(dataHbd.index).apply(isAutosomal))[0]].astype(float)
 countsTumor = dataTumor.iloc[np.where(pd.Series(dataTumor.index).apply(isAutosomal))[0]].astype(float)
 
-
+# library size
 librarysizeHbd = np.round(np.array(dataHbd.loc['Used reads'].astype(float)))
 librarysizeTumor = np.round(np.array(dataTumor.loc['Used reads'].astype(float)))
 
@@ -44,7 +43,7 @@ librarysizeTumor = np.round(np.array(dataTumor.loc['Used reads'].astype(float)))
 countsBloodTumor = pd.concat((countsHbd, countsTumor), axis=1)
 librarysizeBloodTumor = np.hstack((librarysizeHbd, librarysizeTumor))
 
-
+# DMR calling
 labels = np.ones(countsBloodTumor.shape[1], int)
 labels[:countsHbd.shape[1]] = 0
 
@@ -69,74 +68,6 @@ countsBloodTumor = countsBloodTumor.iloc[ind]
 dmrInfo = r_dmr_edgeR_tissue(countsBloodTumor.T, librarysizeBloodTumor, labels, maxMarkers=countsBloodTumor.shape[0], minFC=0.)
 # in total 3,628 DMRs with Bonferroni correction
 
-sys.exit(0)
-###############################################################################
-liverData = pd.read_csv('/home/stavros/emc/projects/MedSeq/processed/liver-2025-06-30-21-18/counts_aggregated_cpgi.csv',index_col=0)
-countsLiver = liverData.loc[countsHbd.index]
-
-dd = {'H17-2409': 14130193.0,
- 'H94-3521': 7035922.0,
- 'H18-20019': 13510083.0,
- 'H91-5063': 13987352.0,
- 'H91-7053': 13384933.0,
- 'H91-14328': 13886509.0,
- 'H17-381': 13669314.0,
- 'H93-10410': 15617285.0,
- 'H92-108': 12748987.0,
- 'H94-3854': 12417421.0,
- 'H12-16946': 13501276.0,
- 'H14-7336': 14570170.0,
- 'H14-5502': 16344821.0,
- 'H92-10299': 14113936.0,
- 'H18-1952': 13266928.0,
- 'H91-12731': 14698250.0,
- 'H93-4355': 13164478.0,
- 'H94-7144': 14061417.0,
- 'H94-5429': 12579277.0,
- 'H92-14906': 14154025.0,
- 'H92-2866': 14112683.0,
- 'H94-7789': 8745985.0,
- 'H18-10766': 14410008.0,
- 'H18-10573': 13319707.0,
- 'H94-6176': 14160397.0,
- 'H08-22541': 15444586.0,
- 'H94-2181': 14232665.0,
- 'H92-2816': 13543655.0,
- 'H17-1277': 13474133.0,
- 'H92-2814': 7720703.0,
- 'H12-24094': 13156419.0,
- 'H93-8167': 9750525.0}
-
-librarysizeLiver = np.array(countsLiver.columns.map(dd))
-
-countsBloodLiver = pd.concat((countsHbd, countsLiver), axis=1)
-librarysizeBloodLiver = np.hstack((librarysizeHbd, librarysizeLiver))
-
-
-labels2 = np.ones(countsBloodLiver.shape[1], int)
-labels2[:countsHbd.shape[1]] = 0
-
-
-mu2 = np.mean(countsBloodLiver, axis=1)
-sigma2 = np.std(countsBloodLiver, axis=1, ddof=1)
-
-
-ind = np.where(sigma2 > 0)[0]
-
-mu2 = mu2[ind]
-sigma2 = sigma2[ind]
-countsBloodLiver = countsBloodLiver.iloc[ind]
-
-
-cv2 = sigma2 / mu2
-threshold = np.median(cv2)
-
-ind = np.where(cv2 > threshold)[0]
-countsBloodLiver = countsBloodLiver.iloc[ind]
-
-dmrInfoLiver = r_dmr_edgeR_tissue(countsBloodLiver.T, librarysizeBloodLiver, labels2, maxMarkers=countsBloodLiver.shape[0], minFC=0.)
-
-dmrInfo = dmrInfo.loc[np.setdiff1d(dmrInfo.index, dmrInfoLiver.index)]
 
 ###############################################################################
 # get the 11 excluded patients that had an oncomine hit
@@ -153,6 +84,7 @@ excludedData = miracleData[clinical['T0_lcode']]
 miracleinfo = pd.read_csv(args.medseq_sample_info, index_col=0)
 miracleinfo = miracleinfo.loc[clinical['T0_lcode']]
 
+# normalize
 excludedTPM = counts2tpm(excludedData)
 excludedLogTPM = np.log(excludedTPM + 1.0)
 
@@ -162,31 +94,15 @@ vaf = np.array(clinical['T0_VAF_oncomine'])
 
 rhos = np.zeros(dmrInfo.shape[0])
 ps = np.zeros(rhos.shape)
-psOnesided = np.zeros(rhos.shape)
 
 for i in range(dmrInfo.shape[0]):
     rhos[i], ps[i] = spearmanr(vaf, dmrdata[:, i])
-    if dmrInfo.iloc[i]['logFC'] > 0:
-        _, psOnesided[i] = spearmanr(vaf, dmrdata[:,i], alternative='greater')
-    else:
-        _, psOnesided[i] = spearmanr(vaf, dmrdata[:,i], alternative='less')
-
-top500 = dmrInfo[dmrInfo['logFC'].abs()>logFC].iloc[:Ngenes]
-isInSelection = np.zeros(dmrInfo.shape[0])
-
-for i, reg in enumerate(dmrInfo.index):
-    if reg in top500.index:
-        isInSelection[i] = 1.
 
 
 rhos[np.isnan(rhos)] = 0.0
 ps[np.isnan(ps)] = 1.0
-psOnesided[np.isnan(psOnesided)] = 1.0
-
 
 pcor = multipletests(ps, method='fdr_bh')[1]
-pcorOnesided = multipletests(psOnesided, method='fdr_bh')[1]
-
 
 
 fig = plt.figure()
@@ -227,12 +143,8 @@ fig.savefig('../figures/final_DMRS_foldchange_vafcor.svg', dpi=600)
 
 
 
-
-
-
 dmrInfo['correlation_with_VAF_exclusion'] = rhos
 dmrInfo['FDR_correlation_with_VAF_exclusion'] = pcor
-dmrInfo['FDR_correlation_with_VAF_exclusion_sided'] = pcorOnesided
 
 dmrInfo['logFC_correlation_sign_matches'] = (dmrInfo['correlation_with_VAF_exclusion'] * dmrInfo['logFC'] > 0).astype(int)
 
@@ -250,10 +162,6 @@ chrom2NregionsDMR = dmrInfo.groupby('chromosome').count()['logFC'].to_dict()
 # for chromosome distribution of those with VAF correlation
 chrom2NregionsDMRandVAF = dmrInfo.iloc[np.where(np.logical_and(dmrInfo['FDR_correlation_with_VAF_exclusion'] < 0.05, dmrInfo['logFC_correlation_sign_matches']))[0]].groupby('chromosome').count()['logFC'].to_dict()
 NislandsFurtherSelection = np.sum(np.logical_and(dmrInfo['FDR_correlation_with_VAF_exclusion'] < 0.05, dmrInfo['logFC_correlation_sign_matches']))
-
-# # if one-sided
-# chrom2NregionsDMRandVAF = dmrInfo.iloc[np.where(dmrInfo['FDR_correlation_with_VAF_exclusion_sided'] < 0.05)[0]].groupby('chromosome').count()['logFC'].to_dict()
-# NislandsFurtherSelection = np.sum(dmrInfo['FDR_correlation_with_VAF_exclusion_sided'] < 0.05)
 
 
 chroms = np.arange(1,23)

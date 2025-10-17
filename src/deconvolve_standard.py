@@ -30,13 +30,9 @@ dataTumor = pd.read_csv(args.tumorfile, index_col=0)
 countsHbd = dataHbd.iloc[np.where(pd.Series(dataHbd.index).apply(isAutosomal))[0]].astype(float)
 countsTumor = dataTumor.iloc[np.where(pd.Series(dataTumor.index).apply(isAutosomal))[0]].astype(float)
 
-
-librarysizeHbd = np.round(np.array(dataHbd.loc['Used reads'].astype(float)))
-librarysizeTumor = np.round(np.array(dataTumor.loc['Used reads'].astype(float)))
-
 dmrInfo = pd.read_csv(args.dmr_file, index_col=0)
 
-
+# select DMRs
 dmrInfo = dmrInfo[dmrInfo['FDR_correlation_with_VAF_exclusion'] < 0.05]
 dmrInfo = dmrInfo[dmrInfo['logFC_correlation_sign_matches'] == 1]
 
@@ -77,10 +73,10 @@ labels[:countsHbd.shape[1]] = 0
 
 # means and variances/dispersions
 params = r_estimateMeanVariance(bloodtumormarkers.T, labels)
-sys.exit(0)
 
 lcode2tfe = dict()
 
+# do deconvolution
 for i, ds in enumerate([miracleDataE, miracleData0, miracleData3], 1):
     dataMarkers = ds.loc[bloodtumormarkers.index]
 
@@ -90,8 +86,7 @@ for i, ds in enumerate([miracleDataE, miracleData0, miracleData3], 1):
         assert lcode not in lcode2tfe
         lcode2tfe[lcode] = tt
 
-    # break
-sys.exit(0)
+
 with open(args.tfe_dict, 'wb') as f:
     pickle.dump(lcode2tfe, f)
 
@@ -234,32 +229,6 @@ clinical = clinical[clinical['RFS_event'] != 'Unknown']
 
 clinical['T0_medseq_TFE'] = clinical['T0_lcode'].map(lcode2tfe)
 clinical['T3_medseq_TFE'] = clinical['T3_lcode'].map(lcode2tfe)
-
-
-from vafpredictor import fitLinearPredictorOdds, predictLogOdds
-datafit = clinical[clinical['T0_medseq_success'] == 1.0]
-datafit = datafit[datafit['T0_VAF_oncomine'] > 0]
-
-params = fitLinearPredictorOdds(datafit['T0_medseq_TFE'], datafit['T0_VAF_oncomine'])
-
-fig = plt.figure()
-ax = fig.add_subplot(111)
-
-ax.scatter(datafit['T0_medseq_TFE'], datafit['T0_VAF_oncomine'])
-
-m = np.min(datafit['T0_medseq_TFE'])
-M = np.max(datafit['T0_medseq_TFE'])
-
-x = np.linspace(m, M, 500)
-y = predictLogOdds(x, params)
-ax.plot(x, y, color='k')
-
-
-ax.set_xlabel('medseq TFE', fontsize=14)
-ax.set_ylabel('Oncomine VAF', fontsize=14)
-
-
-clinical['T0_VAF_oncomine_predicted_from_medseq'] = predictLogOdds(clinical['T0_medseq_TFE'], params)
 
 
 clinical.to_csv(args.outfile)

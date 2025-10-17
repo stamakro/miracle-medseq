@@ -22,6 +22,10 @@ DMRCALLINGOUTPUTFILE='../results/dmrs_halfvariable_fwer_fc0_crlm_hbd_vafcor_in_e
 LCODETFEPKL='../results/lcode2tfe.pkl';
 # where to save final dataset
 DATASET='../data/dataset.csv';
+# CNV TFE results
+CNVFILE='../data/medseqcnv_tumor_fraction_estimates_n120.csv';
+# PCR results from previous study
+PCRRESULTS='../results/pcr_ctdnapositive_t3.csv'
 
 export PYTHONPATH=$PYTHONPATH:/home/stavros/Desktop/code/beta-kde/;
 
@@ -46,14 +50,14 @@ python deconvolve_standard.py --cleandb $CLEANDBFILE --hbdfile $HBDMEDSEQCOUNTS 
 
 conda deactivate;
 
-# for survival analysis/lifelines/sklearn
+# lifelines 0.27.7/ numpy 1.24.1/ sklearn 1.4.2/ dcurves 1.1.1
 conda activate mcmc;
 
-python predict_t0.py --dataset $DATASET;
+# associate TFE-ME and TFE-CNV at T0 with clinical data and outcome
+python predict_t0.py --dataset $DATASET --miraclecfdnainfo $MEDSEQSAMPLEOVERZICHTCFDNA --cnv-file $CNVFILE;
 
-conda deactivate;
+# associate TFE-ME and TFE-CNV at T3 with outcome
+python predict_t3.py --dataset $DATASET --pcr-results $PCRRESULTS --t3-cutoff 70;
 
-conda activate rpy;
-python growthpatterns.py --dataset $DATASET --cfdnafile $MIRACLEMEDSEQCOUNTS --miraclecfdnainfo $MEDSEQSAMPLEOVERZICHTCFDNA;
-
-conda deactivate;
+# decision curve analysis
+python doDca.py --dataset $DATASET --outcome 'OS' --years 3.0 --postop 0;

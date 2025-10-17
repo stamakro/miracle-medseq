@@ -13,6 +13,7 @@ parser.add_argument('--outcome', dest='surv', metavar='outcome', help='OS or RFS
 parser.add_argument('--years', dest='years', metavar='YEARS', help='timepoint to evaluate', default=3.0, type=float)
 parser.add_argument('--postop', dest='postop', metavar='POSTOP', help='whether to include postoperative', default=0, type=int)
 parser.add_argument('--nfolds', dest='folds', metavar='NFOLDS', help='# cv folds', default=10, type=int)
+parser.add_argument('--lowessFrac', dest='lowessFrac', metavar='LOWESS', help='lowess fraction of points', default=0.5, type=float)
 args = parser.parse_args()
 
 
@@ -25,15 +26,6 @@ data['RFS_days2'] = np.minimum(data['RFS_days'], 365.0)
 
 dataME = data[data['T0_medseq_success'] == 1.0]
 
-# AMP08 had recurrence and then no further follow-up
-# for now censor at day of recurrence
-print('!!!!!!!!!!!!!!!WARNING!!!!!!!!!!!')
-print('setting AMP08 OS_event missing variable')
-i = np.where(dataME.index == 'AMP08')[0][0]
-j = np.where(dataME.columns == 'OS_event')[0][0]
-dataME.iloc[i,j] = 0
-
-medianTFE = dataME['T0_medseq_TFE'].median()
 
 print(dataME.shape)
 
@@ -48,7 +40,6 @@ print(dataME.shape)
 
 
 modality = 'medseq'
-dataME['ctDNAhigh_%s' % modality] = (dataME['T0_%s_TFE' % modality] > medianTFE).astype(int)
 
 # multiply by 100 and divdie by 10
 dataME['T0_%s_TFE_10' % modality] = 10. * dataME['T0_%s_TFE' % modality]
@@ -68,6 +59,7 @@ dataME_mv = dataME[~dataME['fongHigh'].isna()]
 
 targetDays = 365.25 * args.years
 
+# for stratification in CV
 osEventAtTarget = np.zeros(dataME_mv.shape[0], int)
 for i in range(dataME_mv.shape[0]):
     if dataME_mv.iloc[i]['%s_days' % args.surv] > targetDays:
@@ -85,7 +77,6 @@ if args.postop:
 else:
     myformula = 'T0_medseq_TFE_10 + rightsided_primary + rectal_primary + fongHigh + age_std + isMale + metachronous'
 
-myformula = 'rightsided_primary + rectal_primary + fongHigh + age_std + isMale + metachronous'
 
 concordanceIndex = np.zeros((2,args.folds))
 
@@ -107,16 +98,38 @@ for i, (trainInd, testInd) in enumerate(cv.split(dataME_mv, osEventAtTarget)):
 dataME_mv['pr_death_3y'] = risks
 
 
-dcares = dca(data=dataME_mv, outcome='%s_event' % args.surv, modelnames=['pr_death_3y', 'fongHigh'], thresholds=np.arange(0,0.5,0.005), time=targetDays, time_to_outcome_col='%s_days' % args.surv)
+dcares = dca(data=dataME_mv, outcome='%s_event' % args.surv, modelnames=['pr_death_3y'], thresholds=np.arange(0,0.5,0.005), time=targetDays, time_to_outcome_col='%s_days' % args.surv)
 
-plot_graphs(dcares, graph_type='net_benefit', smooth_frac=0.5, file_name='delete.png')
 
-if args.postop:
-    prefix = 'postop'
-else:
-    prefix = 'preop'
-filename = '../results/%s_dca_%s_at_%.1f_years.csv' % (prefix, args.surv, args.years)
+dcares = pd.read_csv('../results/%s_dca_%s_at_%.1f_years.csv' % (prefix, args.surv, args.years), index_col=0)
 
-# dcares.to_csv(filename)
+lowess = sm.nonparametric.lowess
 
-plt.close()
+y_col = 'net_benefit'
+
+fig,ax = plt.subplots(1,1)
+
+colors = ['C0', 'k', 'k']
+styles = ['-', '-', '--']
+
+for i,model in enumerate(dcares['model'].unique()):
+    print(model)
+
+
+    x = dcares[dcares['model'] == model]
+    if model.lower() not in ['all', 'none']:
+        smoothed_data = lowess(x[y_col], x['threshold'], frac=args.lowessFrac)
+        ax.plot(smoothed_data[:,0], smoothed_data[:,1], color=colors[i], linestyle=styles[i], label='model')
+
+    else:
+        ax.plot(x['threshold'], x[y_col], color=colors[i], linestyle=styles[i], label=model)
+
+
+ax.set_ylim(-0.05,0.6)
+ax.set_xlim(0.01,0.51)
+ax.legend()
+ax.set_xlabel('Threshold probability', fontsize=15)
+ax.set_ylabel('Net Benefit', fontsize=16)
+
+ax.grid()
+plt.show()
